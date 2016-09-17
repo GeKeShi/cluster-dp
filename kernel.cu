@@ -514,7 +514,7 @@ int main(int argc, char **argv)
 
 	//errno_t err;
 	//打开文件
-	FILE *input = fopen("Aggregation.txt", "r");
+	FILE *input = fopen("dataset_2D.txt", "r");
 	if (input == NULL)
 		printf("data file not found\n");
 	else
@@ -677,7 +677,7 @@ int main(int argc, char **argv)
 	{
 		/* code */
 		for(int j=0;j<FEATURE_DIM;j++){
-		fprintf(output,"%f,"data[i].feature_data[j]);
+		fprintf(output,"%f,",data[i].feature_data[j]);
 		}
 		fprintf(output, "%d", decision[i]);
 		fprintf(output, "\n");
