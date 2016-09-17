@@ -638,7 +638,6 @@ int main(int argc, char **argv)
 	memset(decision, -1, sizeof(int) * DATASIZE);
 	//cudaDeviceSynchronize();
 	int cluster_num = 0;
-	int cluster_num = 0;
 	if (argc == 1)
 	{
 		printf("set cluster number:Y/N\n");
@@ -678,7 +677,7 @@ int main(int argc, char **argv)
 	{
 		/* code */
 		for(int j=0;j<FEATURE_DIM;j++){
-		fprintf(output,"%f,"data[i].feature_data[j])
+		fprintf(output,"%f,"data[i].feature_data[j]);
 		}
 		fprintf(output, "%d", decision[i]);
 		fprintf(output, "\n");
