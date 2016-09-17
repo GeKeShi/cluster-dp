@@ -41,14 +41,12 @@ plt.figure()
 for i in range(length):
     index = input_lable[i]
     plt.plot(location[i][0], location[i][1], color=colors[index], marker='.')
-plt.xlabel('x')
-plt.ylabel('y')
+plt.xlabel('x'), plt.ylabel('y')
 plt.show()
-
+# plt.close()
 plt.figure()
 for i in range(length):
     index = result_lable[i]
     plt.plot(location[i][0], location[i][1], color=colors[index], marker='.')
-plt.lable('x')
-plt.lable('y')
+plt.xlabel('x'), plt.ylabel('y')
 plt.show()
