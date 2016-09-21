@@ -1,6 +1,4 @@
 
-
-
 #include "iostream"
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,6 +8,9 @@
 #include "Header.h"
 #include "device_launch_parameters.h"
 #include "device_functions.h"
+#include <thrust/device_vector.h>
+#include <thrust/device_ptr.h>
+#include <thrust/extrema.h>
 using namespace std;
 
 #ifndef bool
@@ -47,11 +48,19 @@ __global__ void distance_kernel(Point *dev_data, float *dev_distance,size_t pitc
 	{
 		float *address = (float *)((char *)dev_distance + tid_row*pitch);
 		float point_distance = 0;
-		for (int i = 0; i < FEATURE_DIM; i++)
+		if (tid_row==tid_col)
 		{
-			point_distance += powf(dev_data[tid_row].feature_data[i] - dev_data[tid_col].feature_data[i], 2);
+			address[tid_col]=0;
+
+		}else
+		{
+			for (int i = 0; i < FEATURE_DIM; i++)
+			{
+				point_distance += powf(dev_data[tid_row].feature_data[i] - dev_data[tid_col].feature_data[i], 2);
+			}
+			address[tid_col] = sqrtf(point_distance);
 		}
-		address[tid_col] = sqrtf(point_distance);
+		
 	}
 
 }//计算距离核函数
@@ -251,7 +260,7 @@ float getdc_gpu(float *dev_distance, float neighborRate,size_t pitch){
 	int dc_num=0;
 	dim3 dimBlock(16, 16);
 	dim3 dimGrid((DATASIZE + 15) / 16);
-
+/*
 	float *dev_min_distance, *dev_max_distance;
 	HANDLE_ERROR(cudaMalloc(&dev_min_distance, sizeof(float)*((int)((DATASIZE + 15) / 16))));
 	HANDLE_ERROR(cudaMalloc(&dev_max_distance, sizeof(float)*((int)((DATASIZE + 15) / 16))));
@@ -272,10 +281,12 @@ float getdc_gpu(float *dev_distance, float neighborRate,size_t pitch){
 	HANDLE_ERROR(cudaFree(dev_max_distance));
 	HANDLE_ERROR(cudaFree(dev_min_distance));
 	printf("host_min_dis=%f,host_max_dis=%f\n", host_min_dis, host_max_dis);
-	float dc = host_min_dis;
+	float dc = host_min_dis;*/
+	float dc=0;
 	while (dc_num<nSamples_rate)
 	{
-		dc += (host_max_dis - host_min_dis) / 500;
+		//dc += (host_max_dis - host_min_dis) / 500;
+		dc+=0.1;
 		int *dev_result;
 		HANDLE_ERROR(cudaMalloc(&dev_result, sizeof(int)));
 		HANDLE_ERROR(cudaMemset(dev_result, 0, sizeof(int)));
@@ -411,8 +422,30 @@ void getdecisionvalue_gpu(double* decision_value_ptr, float *delta, double *dev_
 	}
 	printf("\n");
 }
-void get_cluster_center_auto(int *decision, double *decision_value){
-
+void get_cluster_center_auto(double *dev_rho, float *delta, int *decision,double *host_rho,float *host_delta){
+	thrust::device_ptr<double> thrust_dev_rho(dev_rho);
+	thrust::device_ptr<float> thrust_delta(delta);
+	printf("get_cluster_center_auto\n");
+	thrust::pair<thrust::device_ptr<double>,thrust::device_ptr<double> > rho_min_max_result=thrust::minmax_element(thrust_dev_rho, thrust_dev_rho+DATASIZE);
+	printf("dev_rho thrust minmax\n");
+	thrust::pair<thrust::device_ptr<float>,thrust::device_ptr<float> > delta_min_max_result=thrust::minmax_element(thrust_delta, thrust_delta+DATASIZE);
+	printf("delta thrust minmax\n");
+	double rho_bound = RHO_RATE*(*rho_min_max_result.second - *rho_min_max_result.first) + *rho_min_max_result.first;
+    float delta_bound = DELTA_RATE*(*delta_min_max_result.second - *delta_min_max_result.first) + *delta_min_max_result.first;
+    printf("rho_bound:%f delta_bound:%f\n",rho_bound,delta_bound);
+    int counter;
+    for (int i = 0; i < DATASIZE; ++i)
+    {
+        /* code */
+        if (host_rho[i]>rho_bound && host_delta[i]>delta_bound)// need host data?
+        {
+            decision[i] = counter;
+            counter++;
+            printf("%d\n", counter);
+        }
+    }
+ 
+    
 }
 void set_cluster_center(int *decision, double *decision_value, int cluster_num){
 	printf("startset %d center", cluster_num);
@@ -624,7 +657,7 @@ int main(int argc, char **argv)
 
 	}
 	printf("\n");
-	free(host_delta);
+	
 	double *decision_value = (double *)malloc(sizeof(double)*DATASIZE);
 	//计算决策值
 	getdecisionvalue_gpu(decision_value, delta, dev_rho);
@@ -633,7 +666,6 @@ int main(int argc, char **argv)
 
 
 	//设定聚类中心，如果命令行给出聚类个数则按照设定的聚类个数，否则自动获取聚类个数
-	HANDLE_ERROR(cudaFree(delta));
 	int *decision = (int *)malloc(sizeof(int) * DATASIZE);
 	memset(decision, -1, sizeof(int) * DATASIZE);
 	//cudaDeviceSynchronize();
@@ -651,7 +683,9 @@ int main(int argc, char **argv)
 		}
 		else if (tmp=='N')
 		{
-			get_cluster_center_auto(decision, decision_value);
+			double *host_rho=(double *)malloc(sizeof(double)*DATASIZE);
+			HANDLE_ERROR(cudaMemcpy(host_rho,dev_rho,sizeof(double)*DATASIZE,cudaMemcpyDeviceToHost));
+			get_cluster_center_auto(dev_rho,delta,decision,host_rho,host_delta);
 		}
 
 	}
@@ -660,7 +694,7 @@ int main(int argc, char **argv)
 		cluster_num = atoi(argv[1]);
 		set_cluster_center(decision, decision_value, cluster_num);
 	}
-
+	free(host_delta);
 	free(decision_value);
 
 
@@ -668,6 +702,7 @@ int main(int argc, char **argv)
 	assign_cluster_gpu(dev_rho, decision, Host_near_Cluster_lable);
 	free(Host_near_Cluster_lable);
 	HANDLE_ERROR(cudaFree(dev_rho));
+	HANDLE_ERROR(cudaFree(delta));
 
 //print results by the "%f,%f,%d"format
 	FILE *output = fopen("result.txt", "w");
