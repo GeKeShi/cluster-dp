@@ -148,7 +148,7 @@ vector<double> getLocalDensity(vector< vector<double> > &data_distance, double d
 }
 //gussian kernel
 vector<double> getLocalDensity_gussian(vector< vector<double> > &data_distance, double dc, int nSamples){
-    dc=1.9;
+    // dc=1.9;
     vector<double> rho(nSamples, 0.0);
     for (int i = 0; i < nSamples; i++){
         for (int j = 0; j < nSamples; j++){
