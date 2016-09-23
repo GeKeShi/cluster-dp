@@ -321,6 +321,7 @@ __global__ void Gussian_kernel(double *dev_rho, float *dev_distance, float dc,si
 			tmprho += exp(-pow((address[i] / dc), 2));
 		}
 		dev_rho[tid_row] = tmprho;
+		printf("rho:%d:%f",tid_row,dev_rho[tid_row]);
 	}
 }
 void getLocalDensity_gpu(float *dev_distance, float dc, double *dev_rho,size_t pitch){
@@ -374,6 +375,7 @@ __global__ void get_delta_kernel(float *dev_distance, double *dev_rho, int *near
 			near_cluster_lable[tid] = 0;
 		}
 		delta[tid] = dist;
+		printf("delta:%d:%f ",tid,delta[tid] );
 	}
 }
 void getDistanceToHigherDensity_gpu(float *dev_distance, double *dev_rho, int *near_cluster_lable, float *delta,size_t pitch){
@@ -433,7 +435,7 @@ void get_cluster_center_auto(double *dev_rho, float *delta, int *decision,double
 	double rho_bound = RHO_RATE*(*rho_min_max_result.second - *rho_min_max_result.first) + *rho_min_max_result.first;
     float delta_bound = DELTA_RATE*(*delta_min_max_result.second - *delta_min_max_result.first) + *delta_min_max_result.first;
     printf("rho_bound:%f delta_bound:%f\n",rho_bound,delta_bound);
-    int counter;
+    int counter=0;
     for (int i = 0; i < DATASIZE; ++i)
     {
         /* code */
@@ -502,7 +504,7 @@ void assign_cluster_gpu(double *dev_rho, int* decision, int *Host_near_cluster_l
 	HANDLE_ERROR(cudaEventCreate(&stop));
 	HANDLE_ERROR(cudaEventRecord(start, 0));
 
-	int *rho_order = (int *)malloc(sizeof(int)*DATASIZE);
+	int *rho_order = (int *)malloc(sizeof(int)*DATASIZE);//rho_order[0] is the sequence number of the biggest data and so on 
 	for (int i = 0; i < DATASIZE; ++i)
 	{
 		/* code */
@@ -530,7 +532,7 @@ void assign_cluster_gpu(double *dev_rho, int* decision, int *Host_near_cluster_l
 	HANDLE_ERROR(cudaEventDestroy(start));
 	HANDLE_ERROR(cudaEventDestroy(stop));
 	//cudaDeviceSynchronize();
-	for (int i = 0; i < DATASIZE; ++i)
+	for (int i = 0; i < DATASIZE; ++i)//from biggest to smallest rho to set the cluster number 
 	{
 		/* code */
 		if (decision[rho_order[i]] == -1)
@@ -683,9 +685,17 @@ int main(int argc, char **argv)
 		}
 		else if (tmp=='N')
 		{
+			printf("acd\n");
 			double *host_rho=(double *)malloc(sizeof(double)*DATASIZE);
 			HANDLE_ERROR(cudaMemcpy(host_rho,dev_rho,sizeof(double)*DATASIZE,cudaMemcpyDeviceToHost));
+			printf("qwer\n");
+			for (int i = 0; i < 100; ++i)
+			{
+				/* code */
+				printf("rho:%d:%f  ",i,host_rho[i] );
+			}
 			get_cluster_center_auto(dev_rho,delta,decision,host_rho,host_delta);
+			free(host_rho);
 		}
 
 	}

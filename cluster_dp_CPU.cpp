@@ -30,7 +30,7 @@ using namespace std;
 
 vector<vector<double> > data;
 vector< vector<double> > data_distance;
-   // vector<int> near_cluster_label;
+vector<int> near_cluster_label;
     //vector<bool> cluster_halo;
 vector<double> rho;
 vector<double> delta;
@@ -128,6 +128,7 @@ double getdc(vector< vector<double> > &data_distance, double neighborRate,int nS
     sort(distance_tmp, 0, distance_tmp.size()-1);//sort
 
     dc = distance_tmp.at(nSamples_rate);
+    cout<<"dc:"<<dc<<endl;
     return dc;
 }
 
@@ -147,17 +148,20 @@ vector<double> getLocalDensity(vector< vector<double> > &data_distance, double d
 }
 //gussian kernel
 vector<double> getLocalDensity_gussian(vector< vector<double> > &data_distance, double dc, int nSamples){
+    dc=1.9;
     vector<double> rho(nSamples, 0.0);
-    for (int i = 0; i < nSamples - 1; i++){
-        for (int j = i + 1; j < nSamples; j++){
+    for (int i = 0; i < nSamples; i++){
+        for (int j = 0; j < nSamples; j++){
             rho[i] = rho[i] + exp(-pow((data_distance[i][j] / dc), 2));
-            rho[j] = rho[j] + exp(-pow((data_distance[i][j] / dc), 2));
         }
-        //cout<<"getting rho. Processing point No."<<i<<endl;
+        cout<<"getting rho. Processing point No."<<i<<rho[i]<<endl;
     }
     return rho;
 }
-vector<double> getDistanceToHigherDensity(vector< vector<double> > &data_distance, vector<double> &rho, vector<int> &near_cluster_label){
+/**
+ * 
+ */
+vector<double> getDistanceToHigherDensity(vector< vector<double> > &data_distance, vector<double> &rho){
     int nSamples = data_distance[0].size();
     vector<double> delta(nSamples, 0.0);
     for (int i = 0; i < nSamples; i++){
@@ -173,21 +177,24 @@ vector<double> getDistanceToHigherDensity(vector< vector<double> > &data_distanc
                     near_cluster_label.back() = j;
                     flag = true;
                 }
-                else {
-                    dist = tmp < dist ? tmp : dist;
+                else if (tmp<dist)
+                {
+                    dist = tmp;
                     near_cluster_label.back() = j;
                 }
             }
         }
         if (!flag){
             for (int j = 0; j < nSamples; j++){
+                if(i==j)
+                    continue;
                 double tmp = data_distance[i][j];
                 dist = tmp > dist ? tmp : dist;
             }
             near_cluster_label.back() = 0;//the bigger data's lable will step over later
         }
         delta[i] = dist;
-        cout<<i<<":"<<near_cluster_label.back()<<endl;
+        cout<<"delta"<<i<<":"<<delta[i]<<endl;
     }
     return delta;
 }
@@ -263,7 +270,8 @@ vector<int> decidegragh(vector<double> &delta, vector<double> &rho,int &cluster_
             counter++;
         }
     }
-    cluster_num = counter + 1;
+    cluster_num = counter;
+    cout<<"cluster_num:"<<cluster_num<<endl;
     return decision;
 }
 
@@ -314,7 +322,7 @@ void assign_cluster(vector<double> &rho, vector<int> &decision, vector<int> &nea
     for (int i = 0; i < rho.size(); ++i)
     {
         /* code */
-        printf("%d:%f  ",rho_order[i],rho[rho_order[i]] );
+        printf("rho_order:%d:%f  ",rho_order[i],rho[rho_order[i]] );
     }
     for (int i = 0; i < rho_order.size(); ++i)
     {
@@ -329,25 +337,28 @@ void assign_cluster(vector<double> &rho, vector<int> &decision, vector<int> &nea
 
 }
 int assign_cluster_recursive(int index){
-    double min_dist=0;
+    double min_dist=10000;
     bool flag=true;
     int neighbor=-1;
+    // int MAX=10000;
     for(int i=0;i<nSamples;i++){
-        if(flag){
+        
+        if(min_dist>data_distance[index][i]&&rho[index]<rho[i]){
             min_dist=data_distance[index][i];
+            neighbor=i;
             flag=false;
-        }
-        if(!flag){
-            if(min_dist>data_distance[index][i]&&rho[index]<rho[i]){
-                min_dist=data_distance[index][i];
-                neighbor=i;
-            }
-
         }
 
     }
-    if(decision[neighbor]==-1)
+    if(decision[neighbor]==-1&&flag==false)
         decision[neighbor]=assign_cluster_recursive(neighbor);
+    if(decision[neighbor]!=-1&&flag==false)
+        return decision[neighbor];
+    if(flag==true)
+        {
+            cout<<"the first center is"<<index<<":"<<decision[index]<<endl;
+            return decision[index];
+        }
 }
 void get_halo(vector<int> &decision, vector< vector<double> > &data_distance, vector<bool> &cluster_halo, vector<double> &rho, double dc,int cluster_num){
     vector<double> density_bound(cluster_num, 0.0);
@@ -429,12 +440,13 @@ int main(int argc, char** argv)
     get_distanc(data_distance, points);
     double dc = getdc(data_distance, NEIGHBORRATE,nSamples);
     rho = getLocalDensity_gussian(data_distance, dc, nSamples);
-    delta = getDistanceToHigherDensity(data_distance, rho, near_cluster_label);
+    delta = getDistanceToHigherDensity(data_distance, rho);
     decision = decidegragh(delta, rho,cluster_num);
-    //assign_cluster(rho, decision, near_cluster_label);
-    for(int i=0;i<nSamples;i++){
-        assign_cluster_recursive(i);
-    }
+    assign_cluster(rho, decision, near_cluster_label);
+    // for(int i=0;i<nSamples;i++){
+    //     decision[i]=assign_cluster_recursive(i);
+    //     cout<<i<<":"<<decision[i]<<endl;
+    // }
     //get_halo(decision, data_distance, cluster_halo, rho, dc, cluster_num);
 
     //end = clock();
