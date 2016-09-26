@@ -8,6 +8,7 @@
 
 #include "iostream"
 #include <stdio.h>
+#include <string.h>
 //#include <ctime>
 #include "vector"
 #include "math.h"
@@ -74,7 +75,7 @@ void get_distanc(vector< vector<double> > &data_distance, vector<Point3d> &data)
     }
 }
 
-void sort(vector<double> &v, long left, long right){
+void selfdef_sort(vector<double> &v, long left, long right){
     if (left < right){
         double key = v[left];
         long low = left;
@@ -106,8 +107,8 @@ void sort(vector<double> &v, long left, long right){
             }
         }
         v[low] = key;// low下标赋值基准数
-        sort(v, left, low - 1);
-        sort(v, low + 1, right);
+        selfdef_sort(v, left, low - 1);
+        selfdef_sort(v, low + 1, right);
     }
 }
 double getdc(vector< vector<double> > &data_distance, double neighborRate,int nSamples){
@@ -125,10 +126,10 @@ double getdc(vector< vector<double> > &data_distance, double neighborRate,int nS
         }
     }
 
-    sort(distance_tmp, 0, distance_tmp.size()-1);//sort
+    selfdef_sort(distance_tmp, 0, distance_tmp.size()-1);//sort
 
     dc = distance_tmp.at(nSamples_rate);
-    cout<<"dc:"<<dc<<endl;
+    // cout<<"dc:"<<dc<<endl;
     return dc;
 }
 
@@ -154,7 +155,7 @@ vector<double> getLocalDensity_gussian(vector< vector<double> > &data_distance, 
         for (int j = 0; j < nSamples; j++){
             rho[i] = rho[i] + exp(-pow((data_distance[i][j] / dc), 2));
         }
-        cout<<"getting rho. Processing point No."<<i<<rho[i]<<endl;
+        // cout<<"getting rho. Processing point No."<<i<<rho[i]<<endl;
     }
     return rho;
 }
@@ -194,7 +195,7 @@ vector<double> getDistanceToHigherDensity(vector< vector<double> > &data_distanc
             near_cluster_label.back() = 0;//the bigger data's lable will step over later
         }
         delta[i] = dist;
-        cout<<"delta"<<i<<":"<<delta[i]<<endl;
+        // cout<<"delta"<<i<<":"<<delta[i]<<endl;
     }
     return delta;
 }
@@ -271,10 +272,64 @@ vector<int> decidegragh(vector<double> &delta, vector<double> &rho,int &cluster_
         }
     }
     cluster_num = counter;
-    cout<<"cluster_num:"<<cluster_num<<endl;
+    // cout<<"cluster_num:"<<cluster_num<<endl;
     return decision;
 }
+struct decision_pair
+{
+    double value;
+    long order;
+    decision_pair(double value,long order):value(value),order(order){}
+};
+bool comp(const decision_pair &a,const decision_pair &b)
+{
+    return a.value>b.value;
+}
+vector<int> decide_value(vector<double> &delta, vector<double> &rho,int &cluster_num){
+    int nSamples = rho.size();
+    // int counter = 0;
+    vector<int> decision(nSamples, -1);
+    vector<decision_pair> decision_value;
+    for (int i = 0; i < nSamples; ++i)
+    {
+        /* code */
+        decision_pair tmp(delta[i]*rho[i],i);
+        decision_value.push_back(tmp);
+    }
+   
+    sort(decision_value.begin(), decision_value.end(),comp);
+    for (int i = 1; i < nSamples; ++i)
+    {
+        /* code */
+        double meandif=((decision_value[i].value-decision_value[i+1].value)+(decision_value[i+1].value-decision_value[i+2].value)+(decision_value[i+2].value-decision_value[i+3].value))/3;
 
+        if (-(decision_value[i].value-decision_value[i-1].value)/decision_value[i].value>0.5&&meandif/decision_value[i].value<0.1)
+        {
+            /* code */
+            cluster_num=i;
+            break;
+        }
+    }
+    //  for (int i = 1; i < 20; ++i)
+    // {
+    //     /* code */
+    //     double meandif=((decision_value[i].value-decision_value[i+1].value)+(decision_value[i+1].value-decision_value[i+2].value)+(decision_value[i+2].value-decision_value[i+3].value))/3;
+    //     cout<<i<<":"<<decision_value[i].value<<"    "<<meandif<<"    "<<-(decision_value[i].value-decision_value[i-1].value)/decision_value[i].value<<"   "<<meandif/decision_value[i].value<<endl;
+    //     // if ((decision_value[i].value-decision_value[i-1].value)/decision_value[i].value>0.5&&meandif/decision_value[i].value<0.1)
+    //     // {
+    //     //     /* code */
+    //     //     cluster_num=i;
+    //     //     break;
+    //     // }
+    // }
+    for (int i = 0; i < cluster_num-1; ++i)
+    {
+        /* code */
+        decision[decision_value[i].order]=i;
+    }
+    // cout<<"cluster_num:"<<cluster_num<<endl;
+    return decision;
+}
 void quicksort(vector<double> &rho, vector<int> &rho_order, long left, long right){
     if (left < right){
         long key = rho_order[left];
@@ -319,11 +374,11 @@ void assign_cluster(vector<double> &rho, vector<int> &decision, vector<int> &nea
         rho_order[i] = i;
     }
     quicksort(rho, rho_order, 0, rho.size()-1);
-    for (int i = 0; i < rho.size(); ++i)
-    {
-        /* code */
-        printf("rho_order:%d:%f  ",rho_order[i],rho[rho_order[i]] );
-    }
+    // for (int i = 0; i < rho.size(); ++i)
+    // {
+    //     /* code */
+    //     printf("rho_order:%d:%f  ",rho_order[i],rho[rho_order[i]] );
+    // }
     for (int i = 0; i < rho_order.size(); ++i)
     {
         /* code */
@@ -354,11 +409,11 @@ int assign_cluster_recursive(int index){
         decision[neighbor]=assign_cluster_recursive(neighbor);
     if(decision[neighbor]!=-1&&flag==false)
         return decision[neighbor];
-    if(flag==true)
-        {
-            cout<<"the first center is"<<index<<":"<<decision[index]<<endl;
-            return decision[index];
-        }
+    // if(flag==true)
+    //     {
+    //         cout<<"the first center is"<<index<<":"<<decision[index]<<endl;
+    //         return decision[index];
+    //     }
 }
 void get_halo(vector<int> &decision, vector< vector<double> > &data_distance, vector<bool> &cluster_halo, vector<double> &rho, double dc,int cluster_num){
     vector<double> density_bound(cluster_num, 0.0);
@@ -400,10 +455,16 @@ void get_halo(vector<int> &decision, vector< vector<double> > &data_distance, ve
 }
 int main(int argc, char** argv)
 {
-    //long start, end;
+    long start, end;
     //errno_t err;
     FILE *input;
-    if((input=fopen("dataset_2D.txt", "r"))==NULL)
+    char inputfile[100];
+    char prefix[100]="dataset/";
+    printf("inputfile:");
+    scanf("%s",inputfile);
+    strcat(prefix,inputfile);
+    printf("%s\n",prefix );  
+    if((input=fopen(prefix, "r"))==NULL)
         printf("data file not found\n");
     else
     {
@@ -416,13 +477,13 @@ int main(int argc, char** argv)
 
 
     while (1){
-        if (fscanf(input, "%lf,%lf,%d", &point_x, &point_y, &point_lable) == EOF) break;
+        if (fscanf(input, "%lf,%lf", &point_x, &point_y) == EOF) break;
 
         vector<double> tpvec;
         data.push_back(tpvec);
 
-        data[counter].push_back(point_x);
-        data[counter].push_back(point_y);
+        data[counter].push_back(point_x/10000);
+        data[counter].push_back(point_y/10000);
 
         ++counter;
     }
@@ -433,15 +494,16 @@ int main(int argc, char** argv)
         printf("datafile closed failed\n");
     }
 
-    //start = clock();
-    cout << "********" << endl;
+    start = clock();
+    // cout << "********" << endl;
     vector<Point3d> points;
     nSamples=dataPro(data, points);
     get_distanc(data_distance, points);
     double dc = getdc(data_distance, NEIGHBORRATE,nSamples);
     rho = getLocalDensity_gussian(data_distance, dc, nSamples);
     delta = getDistanceToHigherDensity(data_distance, rho);
-    decision = decidegragh(delta, rho,cluster_num);
+    // decision = decidegragh(delta, rho,cluster_num);
+    decision=decide_value(delta,rho,cluster_num);
     assign_cluster(rho, decision, near_cluster_label);
     // for(int i=0;i<nSamples;i++){
     //     decision[i]=assign_cluster_recursive(i);
@@ -449,8 +511,8 @@ int main(int argc, char** argv)
     // }
     //get_halo(decision, data_distance, cluster_halo, rho, dc, cluster_num);
 
-    //end = clock();
-    //cout << "used time: " << ((double)(end - start)) / CLOCKS_PER_SEC << endl;
+    end = clock();
+    cout << "used time: " << ((double)(end - start)) / CLOCKS_PER_SEC << endl;
 
     FILE *output;
     if((output=fopen("result_CPU.txt", "w"))!=NULL)

@@ -20,12 +20,14 @@ using namespace std;
 #endif
 
 #define NEIGHBORRATE 0.020  //每个点周围平均2%的点在dc范围内
-#define RHO_RATE 0.6//暂时不用
-#define DELTA_RATE 0.2//no use
-#define DATASIZE 788//点的数目
+#define RHO_RATE 0.75//暂时不用
+#define DELTA_RATE 0.05//no use
+#define DATASIZE 32000//点的数目
 #define FEATURE_DIM 2//点特征维度
 #define BLOCK_DIM 32
 #define GRID_DIM ((DATASIZE+BLOCK_DIM-1)/BLOCK_DIM)
+
+double kernel_time;
 
 typedef struct Point_ {
 	float feature_data[FEATURE_DIM];
@@ -294,7 +296,7 @@ float getdc_gpu(float *dev_distance, float neighborRate,size_t pitch){
 		cuda_kernel_check(__FILE__, __LINE__);
 		HANDLE_ERROR(cudaMemcpy(&dc_num, dev_result, sizeof(int), cudaMemcpyDeviceToHost));
 		HANDLE_ERROR(cudaFree(dev_result));
-		printf("dc=%f\t", dc);
+		// printf("dc=%f\t", dc);
 	}
 
 
@@ -304,6 +306,7 @@ float getdc_gpu(float *dev_distance, float neighborRate,size_t pitch){
 	float elapsedtime;
 	HANDLE_ERROR(cudaEventElapsedTime(&elapsedtime, start, stop));
 	printf("getdc_gpu time:%3.1f ms\n", elapsedtime);
+	kernel_time+=elapsedtime;
 	HANDLE_ERROR(cudaEventDestroy(start));
 	HANDLE_ERROR(cudaEventDestroy(stop));
 	return dc;
@@ -321,7 +324,7 @@ __global__ void Gussian_kernel(double *dev_rho, float *dev_distance, float dc,si
 			tmprho += exp(-pow((address[i] / dc), 2));
 		}
 		dev_rho[tid_row] = tmprho;
-		printf("rho:%d:%f",tid_row,dev_rho[tid_row]);
+		// printf("rho:%d:%f",tid_row,dev_rho[tid_row]);
 	}
 }
 void getLocalDensity_gpu(float *dev_distance, float dc, double *dev_rho,size_t pitch){
@@ -375,7 +378,7 @@ __global__ void get_delta_kernel(float *dev_distance, double *dev_rho, int *near
 			near_cluster_lable[tid] = 0;
 		}
 		delta[tid] = dist;
-		printf("delta:%d:%f ",tid,delta[tid] );
+		// printf("delta:%d:%f ",tid,delta[tid] );
 	}
 }
 void getDistanceToHigherDensity_gpu(float *dev_distance, double *dev_rho, int *near_cluster_lable, float *delta,size_t pitch){
@@ -414,27 +417,28 @@ void getdecisionvalue_gpu(double* decision_value_ptr, float *delta, double *dev_
 	float elapsedtime;
 	HANDLE_ERROR(cudaEventElapsedTime(&elapsedtime, start, stop));
 	printf("getdecisionvalue_gpu time:%3.1f ms\n", elapsedtime);
+	kernel_time+=elapsedtime;
 	HANDLE_ERROR(cudaEventDestroy(start));
 	HANDLE_ERROR(cudaEventDestroy(stop));
 	HANDLE_ERROR(cudaDeviceSynchronize());
-	for (int i = 0; i < 100; i++)
-	{
-		printf("decision_value:%lf\t", decision_value_ptr[i]);
+	// for (int i = 0; i < 100; i++)
+	// {
+	// 	printf("decision_value:%lf\t", decision_value_ptr[i]);
 
-	}
-	printf("\n");
+	// }
+	// printf("\n");
 }
 void get_cluster_center_auto(double *dev_rho, float *delta, int *decision,double *host_rho,float *host_delta){
 	thrust::device_ptr<double> thrust_dev_rho(dev_rho);
 	thrust::device_ptr<float> thrust_delta(delta);
-	printf("get_cluster_center_auto\n");
+	// printf("get_cluster_center_auto\n");
 	thrust::pair<thrust::device_ptr<double>,thrust::device_ptr<double> > rho_min_max_result=thrust::minmax_element(thrust_dev_rho, thrust_dev_rho+DATASIZE);
-	printf("dev_rho thrust minmax\n");
+	// printf("dev_rho thrust minmax\n");
 	thrust::pair<thrust::device_ptr<float>,thrust::device_ptr<float> > delta_min_max_result=thrust::minmax_element(thrust_delta, thrust_delta+DATASIZE);
-	printf("delta thrust minmax\n");
+	// printf("delta thrust minmax\n");
 	double rho_bound = RHO_RATE*(*rho_min_max_result.second - *rho_min_max_result.first) + *rho_min_max_result.first;
     float delta_bound = DELTA_RATE*(*delta_min_max_result.second - *delta_min_max_result.first) + *delta_min_max_result.first;
-    printf("rho_bound:%f delta_bound:%f\n",rho_bound,delta_bound);
+    // printf("rho_bound:%f delta_bound:%f\n",rho_bound,delta_bound);
     int counter=0;
     for (int i = 0; i < DATASIZE; ++i)
     {
@@ -443,7 +447,7 @@ void get_cluster_center_auto(double *dev_rho, float *delta, int *decision,double
         {
             decision[i] = counter;
             counter++;
-            printf("%d\n", counter);
+            // printf("%d\n", counter);
         }
     }
  
@@ -463,7 +467,7 @@ void set_cluster_center(int *decision, double *decision_value, int cluster_num){
 				tmp_value = decision_value[j];
 			}
 		}
-		printf("the %dst cluster center is point %d", i, tmp);
+		// printf("the %dst cluster center is point %d", i, tmp);
 		decision[tmp] = i;
 		decision_value[tmp] = 0;
 	}
@@ -526,9 +530,10 @@ void assign_cluster_gpu(double *dev_rho, int* decision, int *Host_near_cluster_l
 	HANDLE_ERROR(cudaFree(dev_rho_order));
 	HANDLE_ERROR(cudaEventRecord(stop, 0));
 	HANDLE_ERROR(cudaEventSynchronize(stop));
-	float elapsedtime;
-	HANDLE_ERROR(cudaEventElapsedTime(&elapsedtime, start, stop));
-	printf("assign_cluster_gpu time:%3.1f ms\n", elapsedtime);
+	float assign_elapsedtime;
+	HANDLE_ERROR(cudaEventElapsedTime(&assign_elapsedtime, start, stop));
+	printf("assign_cluster_gpu time:%3.1f ms\n", assign_elapsedtime);
+	kernel_time+=assign_elapsedtime;
 	HANDLE_ERROR(cudaEventDestroy(start));
 	HANDLE_ERROR(cudaEventDestroy(stop));
 	//cudaDeviceSynchronize();
@@ -549,14 +554,20 @@ int main(int argc, char **argv)
 
 	//errno_t err;
 	//打开文件
-	FILE *input = fopen("dataset_2D.txt", "r");
-	if (input == NULL)
-		printf("data file not found\n");
-	else
-
-	{
-		printf("data file was opened\n");
-	}
+	long start,end;
+	FILE *input;
+    char inputfile[100];
+    char prefix[100]="dataset/";
+    printf("inputfile:");
+    scanf("%s",inputfile);
+    strcat(prefix,inputfile);
+    printf("%s\n",prefix );  
+    if((input=fopen(prefix, "r"))==NULL)
+        printf("data file not found\n");
+    else
+    {
+        printf("data file was opened\n");
+    }
 
 
 	//读取数据
@@ -582,6 +593,7 @@ int main(int argc, char **argv)
 	{
 		printf("%f,%f\t", data[i].feature_data[0], data[i].feature_data[1]);
 	}*/
+	start=clock();
 	Point *dev_data;
 	float *dev_distance;
 	size_t pitch;
@@ -599,6 +611,7 @@ int main(int argc, char **argv)
 	float get_distanceelapsedtime;
 	HANDLE_ERROR(cudaEventElapsedTime(&get_distanceelapsedtime, start_getdistance, stop_getdistance));
 	printf("getdistance time:%3.1f ms\n", get_distanceelapsedtime);
+	kernel_time+=get_distanceelapsedtime;
 	HANDLE_ERROR(cudaEventDestroy(start_getdistance));
 	HANDLE_ERROR(cudaEventDestroy(stop_getdistance));
 	HANDLE_ERROR(cudaFree(dev_data));
@@ -622,6 +635,7 @@ int main(int argc, char **argv)
 	float getLocalDensityelapsedtime;
 	HANDLE_ERROR(cudaEventElapsedTime(&getLocalDensityelapsedtime, start_getLocalDensity, stop_getLocalDensity));
 	printf("getLocalDensity_gpu time:%3.1f ms\n", getLocalDensityelapsedtime);
+	kernel_time+=getLocalDensityelapsedtime;
 	HANDLE_ERROR(cudaEventDestroy(start_getLocalDensity));
 	HANDLE_ERROR(cudaEventDestroy(stop_getLocalDensity));
 
@@ -629,10 +643,10 @@ int main(int argc, char **argv)
 	int *near_cluster_lable;
 	float *delta;
 	int *Host_near_Cluster_lable = (int *)malloc(sizeof(int) * DATASIZE);
-	cudaEvent_t start, stop;
-	HANDLE_ERROR(cudaEventCreate(&start));
-	HANDLE_ERROR(cudaEventCreate(&stop));
-	HANDLE_ERROR(cudaEventRecord(start, 0));
+	cudaEvent_t start_getdelta, stop_getdelta;
+	HANDLE_ERROR(cudaEventCreate(&start_getdelta));
+	HANDLE_ERROR(cudaEventCreate(&stop_getdelta));
+	HANDLE_ERROR(cudaEventRecord(start_getdelta, 0));
 
 	HANDLE_ERROR(cudaMalloc(&near_cluster_lable, sizeof(int) * DATASIZE));
 	HANDLE_ERROR(cudaMemset(near_cluster_lable, -1, sizeof(int) * DATASIZE));
@@ -640,25 +654,26 @@ int main(int argc, char **argv)
 	getDistanceToHigherDensity_gpu(dev_distance, dev_rho, near_cluster_lable, delta, pitch);
 	HANDLE_ERROR(cudaMemcpy(Host_near_Cluster_lable, near_cluster_lable, sizeof(int) * DATASIZE, cudaMemcpyDeviceToHost));
 
-	HANDLE_ERROR(cudaEventRecord(stop, 0));
-	HANDLE_ERROR(cudaEventSynchronize(stop));
-	float elapsedtime;
-	HANDLE_ERROR(cudaEventElapsedTime(&elapsedtime, start, stop));
-	printf("getDelta_gpu time:%3.1f ms\n", elapsedtime);
-	HANDLE_ERROR(cudaEventDestroy(start));
-	HANDLE_ERROR(cudaEventDestroy(stop));
+	HANDLE_ERROR(cudaEventRecord(stop_getdelta, 0));
+	HANDLE_ERROR(cudaEventSynchronize(stop_getdelta));
+	float getdelta_elapsedtime;
+	HANDLE_ERROR(cudaEventElapsedTime(&getdelta_elapsedtime, start_getdelta, stop_getdelta));
+	printf("getDelta_gpu time:%3.1f ms\n", getdelta_elapsedtime);
+	kernel_time+=getdelta_elapsedtime;
+	HANDLE_ERROR(cudaEventDestroy(start_getdelta));
+	HANDLE_ERROR(cudaEventDestroy(stop_getdelta));
 
 	HANDLE_ERROR(cudaFree(dev_distance));
 	HANDLE_ERROR(cudaFree(near_cluster_lable));
 
 	float *host_delta = (float *)malloc(sizeof(float)*DATASIZE);
 	HANDLE_ERROR(cudaMemcpy(host_delta, delta, sizeof(float) * DATASIZE, cudaMemcpyDeviceToHost));
-	for (int i = 0; i < 100; i++)
-	{
-		printf("delta %d:%f\t near label:%d\t", i,host_delta[i],Host_near_Cluster_lable[i]);
+	// for (int i = 0; i < 100; i++)
+	// {
+	// 	printf("delta %d:%f\t near label:%d\t", i,host_delta[i],Host_near_Cluster_lable[i]);
 
-	}
-	printf("\n");
+	// }
+	// printf("\n");
 	
 	double *decision_value = (double *)malloc(sizeof(double)*DATASIZE);
 	//计算决策值
@@ -674,29 +689,27 @@ int main(int argc, char **argv)
 	int cluster_num = 0;
 	if (argc == 1)
 	{
-		printf("set cluster number:Y/N\n");
-		char tmp;
-		scanf("%c", &tmp);
-		if (tmp=='Y')
-		{
-			printf("cluster number is:");
-			scanf("%d", &cluster_num);
-			set_cluster_center(decision, decision_value, cluster_num);
-		}
-		else if (tmp=='N')
-		{
-			printf("acd\n");
+		// printf("set cluster number:Y/N\n");
+		// char tmp;
+		// scanf("%c", &tmp);
+		// if (tmp=='Y')
+		// {
+		// 	printf("cluster number is:");
+		// 	scanf("%d", &cluster_num);
+		// 	set_cluster_center(decision, decision_value, cluster_num);
+		// }
+		
+			
 			double *host_rho=(double *)malloc(sizeof(double)*DATASIZE);
 			HANDLE_ERROR(cudaMemcpy(host_rho,dev_rho,sizeof(double)*DATASIZE,cudaMemcpyDeviceToHost));
-			printf("qwer\n");
-			for (int i = 0; i < 100; ++i)
-			{
-				/* code */
-				printf("rho:%d:%f  ",i,host_rho[i] );
-			}
+			
+			// for (int i = 0; i < 100; ++i)
+			// {
+			// 	printf("rho:%d:%f  ",i,host_rho[i] );
+			// }
 			get_cluster_center_auto(dev_rho,delta,decision,host_rho,host_delta);
 			free(host_rho);
-		}
+		
 
 	}
 	if (argc>1)
@@ -713,9 +726,11 @@ int main(int argc, char **argv)
 	free(Host_near_Cluster_lable);
 	HANDLE_ERROR(cudaFree(dev_rho));
 	HANDLE_ERROR(cudaFree(delta));
-
+	end=clock();
+	cout<<"used time :"<<((double)(end-start))/CLOCKS_PER_SEC<<endl;
+	cout<<"GPU time"<<kernel_time<<endl;
 //print results by the "%f,%f,%d"format
-	FILE *output = fopen("result.txt", "w");
+	FILE *output = fopen("result_GPU.txt", "w");
 	if (output != NULL)
 		printf("result file open");
 	for (int i = 0; i < counter; ++i)

@@ -5,18 +5,20 @@ import random
 
 # cluster_dp_GPU = "./cluster_dp_GPU"
 # os.system(cluster_dp_GPU)
+input_file = raw_input("enter the input file name:")
 result_file = raw_input("enter the result file name:")
 location = []
-input_lable = []
-for line in open("dataset_2D.txt", "r"):
+# input_lable = []
+for line in open("dataset/"+input_file, "r"):
+    # line = line.replace('-','')
     items = line.strip("\n").split(",")
-    input_lable.append(int(items.pop()))
+    # input_lable.append(int(items.pop()))
     tmp = []
     for item in items:
         tmp.append(float(item))
     location.append(tmp)
 location = np.array(location)
-input_lable = np.array(input_lable)
+# input_lable = np.array(input_lable)
 length = len(location)
 print "data input complete"
 result_lable = []
@@ -40,16 +42,16 @@ colors = []
 for i in range(256):
     colors.append((R[i], G[i], B[i]))
 
-plt.figure()
-for i in range(length):
-    index = input_lable[i]
-    plt.plot(location[i][0], location[i][1], color=(R[index*5],G[index*15],B[index*20]), marker='.')
-plt.xlabel('x'), plt.ylabel('y')
-plt.show()
+# plt.figure()
+# for i in range(length):
+#     index = input_lable[i]
+#     plt.plot(location[i][0], location[i][1], color=(R[index*5%255],G[index*15%255],B[index*20%255]), marker='.')
+# plt.xlabel('x'), plt.ylabel('y')
+# plt.show()
 # plt.close()
 plt.figure()
 for i in range(length):
     index = result_lable[i]
-    plt.plot(location[i][0], location[i][1], color=(R[index*5],G[index*15],B[index*20]), marker='.')
+    plt.plot(location[i][0], location[i][1], color=(R[index*5%255],G[index*15%255],B[index*20%255]), marker='.')
 plt.xlabel('x'), plt.ylabel('y')
 plt.show()

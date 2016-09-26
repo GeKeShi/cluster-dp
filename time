@@ -1,0 +1,54 @@
+D31:CPU 3.2s,GPU 337ms(2.9s)
+Aggegation:CPU 0.196,GPU 0.16
+ca8000:CPU 21.860,GPU 1695ms
+dataset/ca8000
+data file was opened
+read 8000 samples,datafile closed
+getdistance time:135.6 ms
+getdc_gpu time:216.0 ms
+getLocalDensity_gpu time:265.1 ms
+getDelta_gpu time:171.9 ms
+getdecisionvalue_gpu time:3.5 ms
+assign_cluster_gpu time:695.9 ms
+used time :4.10953
+GPU time1487.88
+result file open
+real	0m10.424s
+user	0m3.632s
+sys	0m0.516s
+dataset/ca8000
+data file was opened
+read 8000 samples,datafile closed
+used time: 21.595
+result file open
+real	0m25.572s
+user	0m21.472s
+sys	0m0.176s
+inputfile:ca16000
+dataset/ca16000
+data file was opened
+read 16000 samples,datafile closed
+getdistance time:541.2 ms
+getdc_gpu time:840.1 ms
+getLocalDensity_gpu time:1055.2 ms
+getDelta_gpu time:664.0 ms
+getdecisionvalue_gpu time:3.4 ms
+assign_cluster_gpu time:2234.4 ms
+used time :8.0599
+GPU time5338.35
+result file open
+real	0m14.301s
+user	0m6.484s
+sys	0m1.628s
+inputfile:ca16000
+dataset/ca16000
+data file was opened
+read 16000 samples,datafile closed
+used time: 90.5339
+result file open
+real	1m36.190s
+user	1m28.872s
+sys	0m1.844s
+
+
+ 
