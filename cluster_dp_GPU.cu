@@ -27,7 +27,7 @@ using namespace std;
 #define BLOCK_DIM 32
 #define GRID_DIM ((DATASIZE+BLOCK_DIM-1)/BLOCK_DIM)
 
-double kernel_time;
+float kernel_time;
 
 typedef struct Point_ {
 	float feature_data[FEATURE_DIM];
@@ -251,6 +251,78 @@ __global__ void max_distance_kernel(float *dev_distance, float *max_distance, si
 		max_distance[blockIdx.x] = distance_tmp[threadIdx.x][threadIdx.y];
 	}
 }
+__device__ void potential_kernel(float *dev_distance, float thigma, float *potential,size_t	pitch){
+	__shared__ float potential_tmp[1024];
+	int tid=threadIdx.x;
+	int blockid=blockIdx.x;
+	float *address=(float *)((char *)dev_distance+blockid*pitch);
+	while(tid<DATASIZE){
+		potential_tmp[threadIdx.x]+=expf(-powf(address[tid]/thigma,2));
+		tid+=1024;
+	}
+	__syncthreads();
+	int tmp=1024/2;
+	while(tmp>0){
+		if(blockIdx.x<tmp){
+			potential_tmp[blockIdx.x]+=potential_tmp[blockIdx.x+tmp];
+		}
+		tmp=tmp/2;
+		__syncthreads();
+		
+	}
+	potential[blockid]=potential_tmp[0];
+}
+struct calcu_entropy{
+	const float total_potential;
+	calcu_entropy(float total_potential_):total_potential(total_potential_){}
+	__host__ __device__ float operator(float x){
+		return -(x/total_potential)*(log2f(x/total_potential));
+	}
+};
+float get_entropy(float *dev_distance,float thigma,size_t pitch){
+	thrust::device_vector<float> potential(DATASIZE);
+	float *potential_pointer=thrust::raw_pointer_cast(&potential[0]);
+	potential<<<DATASIZE,1024>>>(dev_distance,thigma, potential_pointer, pitch);
+	float total_potential=thrust::reduce(potential.begin(), potential.end());
+	return thrust::transform_reduce(device_vector.begin(),device_vector.end(),calcu_entropy(total_potential),0.0f,thrust::plus<float>());
+
+}
+float get_dc_entropy(float *dev_distance,size_t pitch){
+	cudaEvent_t start, stop;
+	HANDLE_ERROR(cudaEventCreate(&start));
+	HANDLE_ERROR(cudaEventCreate(&stop));
+	HANDLE_ERROR(cudaEventRecord(start, 0));
+	thrust::device_ptr<float> first_row((float *)((char *)dev_distance));
+	float thigma_max=thrust::max_element(first_row,first_row+DATASIZE);
+	float thigma_min=0;
+	float x1=thigma_min+0.382*(thigma_max-thigma_min);
+    float x2=thigma_min+0.618*(thigma_max-thigma_min);
+    while(thigma_max-thigma_min<0.001){
+    	tmp=get_entropy(dev_distance,x1,pitch)-get_entropy(dev_distance,x2,pitch);
+        if (tmp<0||tmp==0)
+        {
+            /* code */
+            thigma_max=x2;
+            x2=x1;
+            x1=thigma_max-0.618*(thigma_max-thigma_min);
+        }
+        else{
+            thigma_min=x1;
+            x1=x2;
+            x2=thigma_min+0.618*(thigma_max-thigma_min);
+        }
+    }
+    HANDLE_ERROR(cudaEventRecord(stop, 0));
+	HANDLE_ERROR(cudaEventSynchronize(stop));
+	float elapsedtime;
+	HANDLE_ERROR(cudaEventElapsedTime(&elapsedtime, start, stop));
+	printf("getdc_entropy_gpu time:%3.1f ms\n", elapsedtime);
+	kernel_time+=elapsedtime;
+	HANDLE_ERROR(cudaEventDestroy(start));
+	HANDLE_ERROR(cudaEventDestroy(stop));
+    return ((thigma_max+thigma_min)/2)*(sqrt(3)/2);
+    }
+}
 float getdc_gpu(float *dev_distance, float neighborRate,size_t pitch){
 
 	cudaEvent_t start, stop;
@@ -311,29 +383,68 @@ float getdc_gpu(float *dev_distance, float neighborRate,size_t pitch){
 	HANDLE_ERROR(cudaEventDestroy(stop));
 	return dc;
 }
-__global__ void Gussian_kernel(double *dev_rho, float *dev_distance, float dc,size_t pitch){
+float getdc_gpu(float *dev_distance, float neighborRate,size_t pitch){
+
+	cudaEvent_t start, stop;
+	HANDLE_ERROR(cudaEventCreate(&start));
+	HANDLE_ERROR(cudaEventCreate(&stop));
+	HANDLE_ERROR(cudaEventRecord(start, 0));
+	long data_size = DATASIZE*DATASIZE;
+	int nSamples_rate = DATASIZE*DATASIZE*neighborRate;
+	int dc_num=0;
+	dim3 dimBlock(16, 16);
+	dim3 dimGrid((DATASIZE + 15) / 16);
+
+	float dc=0;
+	while (dc_num<nSamples_rate)
+	{
+		//dc += (host_max_dis - host_min_dis) / 500;
+		dc+=0.1;
+		int *dev_result;
+		HANDLE_ERROR(cudaMalloc(&dev_result, sizeof(int)));
+		HANDLE_ERROR(cudaMemset(dev_result, 0, sizeof(int)));
+		dc_kernel <<<dimGrid, dimBlock>>>(dev_distance, dc, pitch, dev_result);
+		cuda_kernel_check(__FILE__, __LINE__);
+		HANDLE_ERROR(cudaMemcpy(&dc_num, dev_result, sizeof(int), cudaMemcpyDeviceToHost));
+		HANDLE_ERROR(cudaFree(dev_result));
+		// printf("dc=%f\t", dc);
+	}
+
+
+
+	HANDLE_ERROR(cudaEventRecord(stop, 0));
+	HANDLE_ERROR(cudaEventSynchronize(stop));
+	float elapsedtime;
+	HANDLE_ERROR(cudaEventElapsedTime(&elapsedtime, start, stop));
+	printf("getdc_gpu time:%3.1f ms\n", elapsedtime);
+	kernel_time+=elapsedtime;
+	HANDLE_ERROR(cudaEventDestroy(start));
+	HANDLE_ERROR(cudaEventDestroy(stop));
+	return dc;
+}
+__global__ void Gussian_kernel(float *dev_rho, float *dev_distance, float dc,size_t pitch){
 	int tid_row= blockIdx.x*blockDim.x + threadIdx.x;
 
 	if (tid_row<DATASIZE)
 	{
-		double tmprho = 0;
+		float tmprho = 0;
 		float *address = (float *)((char *)dev_distance + tid_row*pitch);
 		for (int i = 0; i < DATASIZE; i++)
 
 		{
-			tmprho += exp(-pow((address[i] / dc), 2));
+			tmprho += expf(-powf((address[i] / dc), 2));
 		}
 		dev_rho[tid_row] = tmprho;
 		// printf("rho:%d:%f",tid_row,dev_rho[tid_row]);
 	}
 }
-void getLocalDensity_gpu(float *dev_distance, float dc, double *dev_rho,size_t pitch){
+void getLocalDensity_gpu(float *dev_distance, float dc, float *dev_rho,size_t pitch){
 	dim3 dimBlock(BLOCK_DIM);
 	dim3 dimGrid(GRID_DIM);
 	Gussian_kernel <<<dimGrid, dimBlock>>>(dev_rho, dev_distance, dc,pitch);
 	cuda_kernel_check(__FILE__, __LINE__);
 }
-__global__ void get_delta_kernel(float *dev_distance, double *dev_rho, int *near_cluster_lable, float *delta,size_t pitch){
+__global__ void get_delta_kernel(float *dev_distance, float *dev_rho, int *near_cluster_lable, float *delta,size_t pitch){
 	int tid = blockIdx.x*blockDim.x + threadIdx.x;
 	if (tid<DATASIZE)
 	{
@@ -381,34 +492,34 @@ __global__ void get_delta_kernel(float *dev_distance, double *dev_rho, int *near
 		// printf("delta:%d:%f ",tid,delta[tid] );
 	}
 }
-void getDistanceToHigherDensity_gpu(float *dev_distance, double *dev_rho, int *near_cluster_lable, float *delta,size_t pitch){
+void getDistanceToHigherDensity_gpu(float *dev_distance, float *dev_rho, int *near_cluster_lable, float *delta,size_t pitch){
 	dim3 dimBlock(BLOCK_DIM);
 	dim3 dimGrid(GRID_DIM);
 	get_delta_kernel <<<dimGrid, dimBlock>>>(dev_distance, dev_rho, near_cluster_lable, delta, pitch);
 	cuda_kernel_check(__FILE__, __LINE__);
 }
 
-__global__ void getDecisionvalue_kernel(float *delta, double *dev_rho, double *dev_decision_value){
+__global__ void getDecisionvalue_kernel(float *delta, float *dev_rho, float *dev_decision_value){
 	int tid = blockIdx.x*blockDim.x + threadIdx.x;
 	if (tid<DATASIZE)
 	{
-		dev_decision_value[tid] = (double)delta[tid] * dev_rho[tid];
+		dev_decision_value[tid] = (float)delta[tid] * dev_rho[tid];
 	}
 
 }
-void getdecisionvalue_gpu(double* decision_value_ptr, float *delta, double *dev_rho){
+void getdecisionvalue_gpu(float* decision_value_ptr, float *delta, float *dev_rho){
 	cudaEvent_t start, stop;
 	HANDLE_ERROR(cudaEventCreate(&start));
 	HANDLE_ERROR(cudaEventCreate(&stop));
 	HANDLE_ERROR(cudaEventRecord(start, 0));
 
-	double *dev_decision_value;
-	HANDLE_ERROR(cudaMalloc(&dev_decision_value, sizeof(double) * DATASIZE));
+	float *dev_decision_value;
+	HANDLE_ERROR(cudaMalloc(&dev_decision_value, sizeof(float) * DATASIZE));
 	dim3 dimBlock(BLOCK_DIM);
 	dim3 dimGrid(GRID_DIM);
 	getDecisionvalue_kernel <<<dimGrid, dimBlock>>>(delta, dev_rho, dev_decision_value);
 	cuda_kernel_check(__FILE__, __LINE__);
-	HANDLE_ERROR(cudaMemcpy(decision_value_ptr, dev_decision_value, sizeof(double) * DATASIZE, cudaMemcpyDeviceToHost));
+	HANDLE_ERROR(cudaMemcpy(decision_value_ptr, dev_decision_value, sizeof(float) * DATASIZE, cudaMemcpyDeviceToHost));
 
 
 	HANDLE_ERROR(cudaFree(dev_decision_value));
@@ -428,15 +539,15 @@ void getdecisionvalue_gpu(double* decision_value_ptr, float *delta, double *dev_
 	// }
 	// printf("\n");
 }
-void get_cluster_center_auto(double *dev_rho, float *delta, int *decision,double *host_rho,float *host_delta){
-	thrust::device_ptr<double> thrust_dev_rho(dev_rho);
+void get_cluster_center_auto(float *dev_rho, float *delta, int *decision,float *host_rho,float *host_delta){
+	thrust::device_ptr<float> thrust_dev_rho(dev_rho);
 	thrust::device_ptr<float> thrust_delta(delta);
 	// printf("get_cluster_center_auto\n");
-	thrust::pair<thrust::device_ptr<double>,thrust::device_ptr<double> > rho_min_max_result=thrust::minmax_element(thrust_dev_rho, thrust_dev_rho+DATASIZE);
+	thrust::pair<thrust::device_ptr<float>,thrust::device_ptr<float> > rho_min_max_result=thrust::minmax_element(thrust_dev_rho, thrust_dev_rho+DATASIZE);
 	// printf("dev_rho thrust minmax\n");
 	thrust::pair<thrust::device_ptr<float>,thrust::device_ptr<float> > delta_min_max_result=thrust::minmax_element(thrust_delta, thrust_delta+DATASIZE);
 	// printf("delta thrust minmax\n");
-	double rho_bound = RHO_RATE*(*rho_min_max_result.second - *rho_min_max_result.first) + *rho_min_max_result.first;
+	float rho_bound = RHO_RATE*(*rho_min_max_result.second - *rho_min_max_result.first) + *rho_min_max_result.first;
     float delta_bound = DELTA_RATE*(*delta_min_max_result.second - *delta_min_max_result.first) + *delta_min_max_result.first;
     // printf("rho_bound:%f delta_bound:%f\n",rho_bound,delta_bound);
     int counter=0;
@@ -453,12 +564,12 @@ void get_cluster_center_auto(double *dev_rho, float *delta, int *decision,double
  
     
 }
-void set_cluster_center(int *decision, double *decision_value, int cluster_num){
+void set_cluster_center(int *decision, float *decision_value, int cluster_num){
 	printf("startset %d center", cluster_num);
 	for (int i = 0; i < cluster_num; i++)
 	{
 		int tmp = 0;
-		double tmp_value = 0;
+		float tmp_value = 0;
 		for (int j = 0; j < DATASIZE; j++)
 		{
 			if (tmp_value<decision_value[j])
@@ -472,7 +583,7 @@ void set_cluster_center(int *decision, double *decision_value, int cluster_num){
 		decision_value[tmp] = 0;
 	}
 }
-__global__ void even_sort_kernel(double *dev_rho, int *dev_rho_order){
+__global__ void even_sort_kernel(float *dev_rho, int *dev_rho_order){
 	int data_size = DATASIZE;
 	int tid = blockIdx.x*blockDim.x + threadIdx.x;
 	while (tid + 1 < data_size && (tid % 2 == 1))
@@ -487,7 +598,7 @@ __global__ void even_sort_kernel(double *dev_rho, int *dev_rho_order){
 	}
 
 }
-__global__ void odd_sort_kernel(double *dev_rho, int *dev_rho_order){
+__global__ void odd_sort_kernel(float *dev_rho, int *dev_rho_order){
 	int data_size = DATASIZE;
 	int tid = blockIdx.x*blockDim.x + threadIdx.x;
 	while (tid + 1 < data_size && (tid % 2 == 0))
@@ -502,7 +613,7 @@ __global__ void odd_sort_kernel(double *dev_rho, int *dev_rho_order){
 		tid += blockDim.x*gridDim.x;
 	}
 }
-void assign_cluster_gpu(double *dev_rho, int* decision, int *Host_near_cluster_label){
+void assign_cluster_gpu(float *dev_rho, int* decision, int *Host_near_cluster_label){
 	cudaEvent_t start, stop;
 	HANDLE_ERROR(cudaEventCreate(&start));
 	HANDLE_ERROR(cudaEventCreate(&stop));
@@ -619,14 +730,15 @@ int main(int argc, char **argv)
 	//计算dc
 	float dc = 0;
 	dc=getdc_gpu(dev_distance, NEIGHBORRATE, pitch);
-
+	float dc_entropy=get_dc_entropy(dev_distance,pitch);
+	cout<<"dc_entropy:"<<dc_entropy<<"	dc:"<<dc<<endl;
 	//局部密度
-	double *dev_rho;
+	float *dev_rho;
 	cudaEvent_t start_getLocalDensity, stop_getLocalDensity;
 	HANDLE_ERROR(cudaEventCreate(&start_getLocalDensity));
 	HANDLE_ERROR(cudaEventCreate(&stop_getLocalDensity));
 	HANDLE_ERROR(cudaEventRecord(start_getLocalDensity, 0));
-	HANDLE_ERROR(cudaMalloc(&dev_rho, sizeof(double) * DATASIZE));
+	HANDLE_ERROR(cudaMalloc(&dev_rho, sizeof(float) * DATASIZE));
 
 	getLocalDensity_gpu(dev_distance, dc, dev_rho,pitch);
 
@@ -675,7 +787,7 @@ int main(int argc, char **argv)
 	// }
 	// printf("\n");
 	
-	double *decision_value = (double *)malloc(sizeof(double)*DATASIZE);
+	float *decision_value = (float *)malloc(sizeof(float)*DATASIZE);
 	//计算决策值
 	getdecisionvalue_gpu(decision_value, delta, dev_rho);
 
@@ -700,8 +812,8 @@ int main(int argc, char **argv)
 		// }
 		
 			
-			double *host_rho=(double *)malloc(sizeof(double)*DATASIZE);
-			HANDLE_ERROR(cudaMemcpy(host_rho,dev_rho,sizeof(double)*DATASIZE,cudaMemcpyDeviceToHost));
+			float *host_rho=(float *)malloc(sizeof(float)*DATASIZE);
+			HANDLE_ERROR(cudaMemcpy(host_rho,dev_rho,sizeof(float)*DATASIZE,cudaMemcpyDeviceToHost));
 			
 			// for (int i = 0; i < 100; ++i)
 			// {
@@ -727,7 +839,7 @@ int main(int argc, char **argv)
 	HANDLE_ERROR(cudaFree(dev_rho));
 	HANDLE_ERROR(cudaFree(delta));
 	end=clock();
-	cout<<"used time :"<<((double)(end-start))/CLOCKS_PER_SEC<<endl;
+	cout<<"used time :"<<((float)(end-start))/CLOCKS_PER_SEC<<endl;
 	cout<<"GPU time"<<kernel_time<<endl;
 //print results by the "%f,%f,%d"format
 	FILE *output = fopen("result_GPU.txt", "w");

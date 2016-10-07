@@ -29,21 +29,21 @@ using namespace std;
 #define RHO_RATE 0.6
 #define DELTA_RATE 0.2
 
-vector<vector<double> > data;
-vector< vector<double> > data_distance;
+vector<vector<float> > data;
+vector< vector<float> > data_distance;
 vector<int> near_cluster_label;
     //vector<bool> cluster_halo;
-vector<double> rho;
-vector<double> delta;
+vector<float> rho;
+vector<float> delta;
 vector<int> decision;
 int nSamples;
 struct Point3d {
-    double x;
-    double y;
-    Point3d(double xin, double yin) : x(xin), y(yin) {}
+    float x;
+    float y;
+    Point3d(float xin, float yin) : x(xin), y(yin) {}
 };
 
-int dataPro(vector< vector<double> > &src, vector<Point3d> &dst){
+int dataPro(vector< vector<float> > &src, vector<Point3d> &dst){
     for (int i = 0; i < src.size(); i++){
         Point3d pt(src[i][0], src[i][1]);
         dst.push_back(pt);
@@ -51,17 +51,17 @@ int dataPro(vector< vector<double> > &src, vector<Point3d> &dst){
     return dst.size();
 }
 
-double get_point_Distance(Point3d &pt1, Point3d &pt2){
-    double tmp = pow(pt1.x - pt2.x, 2) + pow(pt1.y - pt2.y, 2);
+float get_point_Distance(Point3d &pt1, Point3d &pt2){
+    float tmp = pow(pt1.x - pt2.x, 2) + pow(pt1.y - pt2.y, 2);
     return pow(tmp, 0.5);
 }
 
-void get_distanc(vector< vector<double> > &data_distance, vector<Point3d> &data){
+void get_distanc(vector< vector<float> > &data_distance, vector<Point3d> &data){
     int data_size = data.size();
     for (int i = 0; i < data_size; ++i)
     {
         /* code */
-        vector<double> tmp(data_size, 0.0);
+        vector<float> tmp(data_size, 0.0);
         for (int j = 0; j < data_size; ++j)
         {
             /* code */
@@ -75,9 +75,9 @@ void get_distanc(vector< vector<double> > &data_distance, vector<Point3d> &data)
     }
 }
 
-void selfdef_sort(vector<double> &v, long left, long right){
+void selfdef_sort(vector<float> &v, long left, long right){
     if (left < right){
-        double key = v[left];
+        float key = v[left];
         long low = left;
         long high = right;
         while (low < high) {
@@ -111,10 +111,10 @@ void selfdef_sort(vector<double> &v, long left, long right){
         selfdef_sort(v, low + 1, right);
     }
 }
-double getdc(vector< vector<double> > &data_distance, double neighborRate,int nSamples){
+float getdc(vector< vector<float> > &data_distance, float neighborRate,int nSamples){
     int nSamples_rate = round(nSamples*(nSamples - 1)*neighborRate / 2);
-    double dc = 0.0;
-    vector<double> distance_tmp;
+    float dc = 0.0;
+    vector<float> distance_tmp;
 
     for (int i = 0; i <nSamples; ++i)
     {
@@ -132,10 +132,63 @@ double getdc(vector< vector<double> > &data_distance, double neighborRate,int nS
     // cout<<"dc:"<<dc<<endl;
     return dc;
 }
-
+float get_potential(float thigma,  int row_num){
+    float phi=0;
+    for (int i = 0; i < nSamples; ++i)
+    {
+        /* code */
+        phi+=exp(-pow(data_distance[row_num][i]/thigma,2));
+    }
+    return phi;
+}
+float get_entropy(float thigma){
+    float total_potential=0,entropy=0;
+    for (int i = 0; i < nSamples; ++i)
+    {
+         /* code */
+        total_potential+=get_potential(thigma,i);
+    }
+    for (int i = 0; i < nSamples; ++i)
+      {
+          /* code */
+        tmp=get_potential(thigma,i)/total_potential;
+        entropy+=-(tmp*log2f(tmp));
+      }  
+}
+float get_dc_entropy(){
+    float thigma_max=0,thigma_min=0.001;
+    for (int i = 0; i < nSamples; ++i)
+    {
+        /* code */
+        if (thigma_max<data_distance[0][i])
+        {
+            /* code */
+            thigma_max=data_distance[0][i];
+        }
+    }
+    float x1=thigma_min+0.382*(thigma_max-thigma_min);
+    float x2=thigma_min+0.618*(thigma_max-thigma_min);
+    while(thigma_max-thigma_min<0.001){
+        tmp=get_entropy(x1)-get_entropy(x2);
+        if (tmp<0||tmp==0)
+        {
+            /* code */
+            thigma_max=x2;
+            x2=x1;
+            x1=thigma_max-0.618*(thigma_max-thigma_min);
+        }
+        else{
+            thigma_min=x1;
+            x1=x2;
+            x2=thigma_min+0.618*(thigma_max-thigma_min);
+        }
+    }
+    return ((thigma_max+thigma_min)/2)*(sqrt(3)/2);
+    
+}
 //cut-off kernel
-vector<double> getLocalDensity(vector< vector<double> > &data_distance, double dc,int nSamples){
-    vector<double> rho(nSamples, 0.0);
+vector<float> getLocalDensity(vector< vector<float> > &data_distance, float dc,int nSamples){
+    vector<float> rho(nSamples, 0.0);
     for (int i = 0; i < nSamples - 1; i++){
         for (int j = i + 1; j < nSamples; j++){
             if (data_distance[i][j] < dc){
@@ -148,9 +201,9 @@ vector<double> getLocalDensity(vector< vector<double> > &data_distance, double d
     return rho;
 }
 //gussian kernel
-vector<double> getLocalDensity_gussian(vector< vector<double> > &data_distance, double dc, int nSamples){
+vector<float> getLocalDensity_gussian(vector< vector<float> > &data_distance, float dc, int nSamples){
     // dc=1.9;
-    vector<double> rho(nSamples, 0.0);
+    vector<float> rho(nSamples, 0.0);
     for (int i = 0; i < nSamples; i++){
         for (int j = 0; j < nSamples; j++){
             rho[i] = rho[i] + exp(-pow((data_distance[i][j] / dc), 2));
@@ -162,17 +215,17 @@ vector<double> getLocalDensity_gussian(vector< vector<double> > &data_distance, 
 /**
  * 
  */
-vector<double> getDistanceToHigherDensity(vector< vector<double> > &data_distance, vector<double> &rho){
+vector<float> getDistanceToHigherDensity(vector< vector<float> > &data_distance, vector<float> &rho){
     int nSamples = data_distance[0].size();
-    vector<double> delta(nSamples, 0.0);
+    vector<float> delta(nSamples, 0.0);
     for (int i = 0; i < nSamples; i++){
-        double dist = 0.0;
+        float dist = 0.0;
         bool flag = false;
         near_cluster_label.push_back(-1);
         for (int j = 0; j < nSamples; j++){
             if (i == j) continue;
             if (rho[j] > rho[i]){
-                double tmp = data_distance[i][j];
+                float tmp = data_distance[i][j];
                 if (!flag){
                     dist = tmp;
                     near_cluster_label.back() = j;
@@ -189,7 +242,7 @@ vector<double> getDistanceToHigherDensity(vector< vector<double> > &data_distanc
             for (int j = 0; j < nSamples; j++){
                 if(i==j)
                     continue;
-                double tmp = data_distance[i][j];
+                float tmp = data_distance[i][j];
                 dist = tmp > dist ? tmp : dist;
             }
             near_cluster_label.back() = 0;//the bigger data's lable will step over later
@@ -202,10 +255,10 @@ vector<double> getDistanceToHigherDensity(vector< vector<double> > &data_distanc
 //应该讲rho进行排序，避免有相同最大密度的点，也可以通过高斯核计算密度来最大程度避免这个问题
 
 /*
-vector<int> decidegragh(vector<double> &delta, vector<double> &rho){
+vector<int> decidegragh(vector<float> &delta, vector<float> &rho){
 int nSamples = rho.size();
 vector<int> decision(nSamples, -1);
-vector<double> multiple(nSamples, 0.0);
+vector<float> multiple(nSamples, 0.0);
 for (int i = 0; i < nSamples; ++i)
 {
 
@@ -214,7 +267,7 @@ multiple[i] = delta[i] * rho[i];
     for (int i = 0; i < CLUSTER_NUM; ++i)
     {
 
-        double tmp_max = 0.0;
+        float tmp_max = 0.0;
         int tmp_lable = 0;
         for (int j = 0; j < nSamples; ++j)
         {
@@ -235,11 +288,11 @@ multiple[i] = delta[i] * rho[i];
 
 */
 
-vector<int> decidegragh(vector<double> &delta, vector<double> &rho,int &cluster_num){
+vector<int> decidegragh(vector<float> &delta, vector<float> &rho,int &cluster_num){
     int nSamples = rho.size();
     int counter = 0;
     vector<int> decision(nSamples, -1);
-    double max_rho = 0.0, min_rho = 0.0, max_delta = 0.0, min_delta = 0.0,rho_bound=0.0,delta_bound=0.0;
+    float max_rho = 0.0, min_rho = 0.0, max_delta = 0.0, min_delta = 0.0,rho_bound=0.0,delta_bound=0.0;
     for (int i = 0; i < nSamples; ++i)
     {
         /* code */
@@ -277,15 +330,15 @@ vector<int> decidegragh(vector<double> &delta, vector<double> &rho,int &cluster_
 }
 struct decision_pair
 {
-    double value;
+    float value;
     long order;
-    decision_pair(double value,long order):value(value),order(order){}
+    decision_pair(float value,long order):value(value),order(order){}
 };
 bool comp(const decision_pair &a,const decision_pair &b)
 {
     return a.value>b.value;
 }
-vector<int> decide_value(vector<double> &delta, vector<double> &rho,int &cluster_num){
+vector<int> decide_value(vector<float> &delta, vector<float> &rho,int &cluster_num){
     int nSamples = rho.size();
     // int counter = 0;
     vector<int> decision(nSamples, -1);
@@ -301,7 +354,7 @@ vector<int> decide_value(vector<double> &delta, vector<double> &rho,int &cluster
     for (int i = 1; i < nSamples; ++i)
     {
         /* code */
-        double meandif=((decision_value[i].value-decision_value[i+1].value)+(decision_value[i+1].value-decision_value[i+2].value)+(decision_value[i+2].value-decision_value[i+3].value))/3;
+        float meandif=((decision_value[i].value-decision_value[i+1].value)+(decision_value[i+1].value-decision_value[i+2].value)+(decision_value[i+2].value-decision_value[i+3].value))/3;
 
         if (-(decision_value[i].value-decision_value[i-1].value)/decision_value[i].value>0.5&&meandif/decision_value[i].value<0.1)
         {
@@ -313,7 +366,7 @@ vector<int> decide_value(vector<double> &delta, vector<double> &rho,int &cluster
     //  for (int i = 1; i < 20; ++i)
     // {
     //     /* code */
-    //     double meandif=((decision_value[i].value-decision_value[i+1].value)+(decision_value[i+1].value-decision_value[i+2].value)+(decision_value[i+2].value-decision_value[i+3].value))/3;
+    //     float meandif=((decision_value[i].value-decision_value[i+1].value)+(decision_value[i+1].value-decision_value[i+2].value)+(decision_value[i+2].value-decision_value[i+3].value))/3;
     //     cout<<i<<":"<<decision_value[i].value<<"    "<<meandif<<"    "<<-(decision_value[i].value-decision_value[i-1].value)/decision_value[i].value<<"   "<<meandif/decision_value[i].value<<endl;
     //     // if ((decision_value[i].value-decision_value[i-1].value)/decision_value[i].value>0.5&&meandif/decision_value[i].value<0.1)
     //     // {
@@ -330,7 +383,7 @@ vector<int> decide_value(vector<double> &delta, vector<double> &rho,int &cluster
     // cout<<"cluster_num:"<<cluster_num<<endl;
     return decision;
 }
-void quicksort(vector<double> &rho, vector<int> &rho_order, long left, long right){
+void quicksort(vector<float> &rho, vector<int> &rho_order, long left, long right){
     if (left < right){
         long key = rho_order[left];
         long low = left;
@@ -366,7 +419,7 @@ void quicksort(vector<double> &rho, vector<int> &rho_order, long left, long righ
         quicksort(rho, rho_order, low + 1, right);
     }
 }
-void assign_cluster(vector<double> &rho, vector<int> &decision, vector<int> &near_cluster_label){
+void assign_cluster(vector<float> &rho, vector<int> &decision, vector<int> &near_cluster_label){
     vector<int> rho_order(rho.size(), -1);
     for (int i = 0; i < rho.size(); ++i)
     {
@@ -392,7 +445,7 @@ void assign_cluster(vector<double> &rho, vector<int> &decision, vector<int> &nea
 
 }
 int assign_cluster_recursive(int index){
-    double min_dist=10000;
+    float min_dist=10000;
     bool flag=true;
     int neighbor=-1;
     // int MAX=10000;
@@ -415,13 +468,13 @@ int assign_cluster_recursive(int index){
     //         return decision[index];
     //     }
 }
-void get_halo(vector<int> &decision, vector< vector<double> > &data_distance, vector<bool> &cluster_halo, vector<double> &rho, double dc,int cluster_num){
-    vector<double> density_bound(cluster_num, 0.0);
+void get_halo(vector<int> &decision, vector< vector<float> > &data_distance, vector<bool> &cluster_halo, vector<float> &rho, float dc,int cluster_num){
+    vector<float> density_bound(cluster_num, 0.0);
     int nSamples = decision.size();
     for (int i = 0; i < nSamples - 1; ++i)
     {
         /* code */
-        double avrg_rho;
+        float avrg_rho;
         for (int j = i+1; j < nSamples; ++j)
         {
             /* code */
@@ -471,7 +524,7 @@ int main(int argc, char** argv)
         printf("data file was opened\n");
     }
 
-    double point_x, point_y;
+    float point_x, point_y;
     int point_lable;
     int counter = 0,cluster_num=0;
 
@@ -479,7 +532,7 @@ int main(int argc, char** argv)
     while (1){
         if (fscanf(input, "%lf,%lf", &point_x, &point_y) == EOF) break;
 
-        vector<double> tpvec;
+        vector<float> tpvec;
         data.push_back(tpvec);
 
         data[counter].push_back(point_x/10000);
@@ -498,10 +551,21 @@ int main(int argc, char** argv)
     // cout << "********" << endl;
     vector<Point3d> points;
     nSamples=dataPro(data, points);
+    start = clock();
     get_distanc(data_distance, points);
-    double dc = getdc(data_distance, NEIGHBORRATE,nSamples);
+    long distance_clock=clock();
+    cout<<"get disance using time:"<<(float(distance_clock-start))/CLOCKS_PER_SEC<<endl;
+    float dc = getdc(data_distance, NEIGHBORRATE,nSamples);
+    float dc_entropy=get_dc_entropy();
+    cout<<"dc: "<<dc<<"  "<<"dc_entropy："<<dc_entropy<<endl;
+    long dc_clock=clock();
+    cout<<"get dc using time:"<<(float(dc_clock-distance_clock))/CLOCKS_PER_SEC<<endl;
     rho = getLocalDensity_gussian(data_distance, dc, nSamples);
+    long rho_clock=clock();
+    cout<<"get density using time:"<<(float(rho_clock-start))/CLOCKS_PER_SEC<<endl;
     delta = getDistanceToHigherDensity(data_distance, rho);
+    long delta_clock=clock();
+    cout<<"get delta using time:"<<(float(delta_clock-start))/CLOCKS_PER_SEC<<endl;
     // decision = decidegragh(delta, rho,cluster_num);
     decision=decide_value(delta,rho,cluster_num);
     assign_cluster(rho, decision, near_cluster_label);
@@ -512,7 +576,7 @@ int main(int argc, char** argv)
     //get_halo(decision, data_distance, cluster_halo, rho, dc, cluster_num);
 
     end = clock();
-    cout << "used time: " << ((double)(end - start)) / CLOCKS_PER_SEC << endl;
+    cout << "used time: " << ((float)(end - start)) / CLOCKS_PER_SEC << endl;
 
     FILE *output;
     if((output=fopen("result_CPU.txt", "w"))!=NULL)
